@@ -1,17 +1,16 @@
-const IMAGE_ONLY_KEYS = new Set([
-  "birthCertificate",
-  "educationProof",
-  "applicantPhoto",
-  "applicantSignature",
-  "parentGuardianSignature"
-]);
-const IMAGE_MIME_ALIASES = {
-  "image/jpg": "image/jpeg",
-  "image/pjpeg": "image/jpeg",
-  "image/x-png": "image/png"
-};
-
 function attachFileToForm(inputKey, dataUrl, fileName, fileType, maxFileBytes) {
+  const imageOnlyKeys = new Set([
+    "birthCertificate",
+    "educationProof",
+    "applicantPhoto",
+    "applicantSignature",
+    "parentGuardianSignature"
+  ]);
+  const imageMimeAliases = {
+    "image/jpg": "image/jpeg",
+    "image/pjpeg": "image/jpeg",
+    "image/x-png": "image/png"
+  };
   const inputIds = {
     birthCertificate: "FupBirthCertificate",
     domicileProof: "FupDomicileAttachProof",
@@ -25,10 +24,10 @@ function attachFileToForm(inputKey, dataUrl, fileName, fileType, maxFileBytes) {
   const inputId = inputIds[inputKey];
   if (!inputId) return { ok: false, error: "This file field is not supported." };
 
-  if (IMAGE_ONLY_KEYS.has(inputKey)) {
+  if (imageOnlyKeys.has(inputKey)) {
     const extension = (/\.([a-z0-9]+)$/i.exec(String(fileName || "")) || [])[1]?.toLowerCase();
     const mime = String(fileType || "").toLowerCase();
-    const normalizedType = IMAGE_MIME_ALIASES[mime] || mime;
+    const normalizedType = imageMimeAliases[mime] || mime;
     if (!["jpg", "jpeg", "png"].includes(extension) ||
         !["image/jpeg", "image/png"].includes(normalizedType)) {
       return {

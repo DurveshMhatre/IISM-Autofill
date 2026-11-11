@@ -5,6 +5,12 @@ const test = require("node:test");
 const vm = require("node:vm");
 
 const attachSource = fs.readFileSync(path.join(__dirname, "..", "page-file-attach.js"), "utf8");
+const panelSources = ["field-validation.js", "page-file-attach.js", "sidepanel.js"]
+  .map((file) => fs.readFileSync(path.join(__dirname, "..", file), "utf8"));
+
+test("side-panel scripts load together without duplicate top-level declarations", () => {
+  assert.doesNotThrow(() => new vm.Script(panelSources.join("\n")));
+});
 
 class FakeEvent {
   constructor(type) {
@@ -71,7 +77,26 @@ function makeHarness(options = {}) {
     setTimeout
   };
   vm.runInNewContext(attachSource, sandbox);
-  return { inputs, api: sandbox.IISMPageFileAttachment };
+  const injectionSandbox = {
+    atob: sandbox.atob,
+    DataTransfer: FakeDataTransfer,
+    document: sandbox.document,
+    Event: FakeEvent,
+    File: FakeFile,
+    HTMLInputElement: FakeInput,
+    setTimeout
+  };
+  const api = {
+    attachFileToForm: vm.runInNewContext(
+      `(${sandbox.IISMPageFileAttachment.attachFileToForm.toString()})`,
+      injectionSandbox
+    ),
+    verifyFilesOnForm: vm.runInNewContext(
+      `(${sandbox.IISMPageFileAttachment.verifyFilesOnForm.toString()})`,
+      injectionSandbox
+    )
+  };
+  return { inputs, api };
 }
 
 test("attaches a PDF to an unrestricted proof field and verifies the selected input", async () => {
