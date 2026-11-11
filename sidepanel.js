@@ -13,6 +13,16 @@ const FILE_INPUT_IDS = {
   applicantSignature: "FupSignatureOfAppicant",
   parentGuardianSignature: "FupParentGuardianSignature"
 };
+const FILE_FIELD_LABELS = {
+  birthCertificate: "Date-of-birth proof",
+  domicileProof: "Domicile proof",
+  educationProof: "Education proof",
+  skiCertificate: "Skiing certificate",
+  currentEmployment: "Current employment proof",
+  applicantPhoto: "Applicant photo",
+  applicantSignature: "Applicant signature",
+  parentGuardianSignature: "Parent / guardian signature"
+};
 const MIME_BY_EXTENSION = {
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
@@ -412,14 +422,32 @@ async function sendToPage(tabId, message) {
 
 function showResults(results) {
   fillStatus.replaceChildren();
+  const entries = results.map((message) => ({
+    message,
+    state: message.startsWith("Could not") || message.startsWith("Skipped")
+      ? "error"
+      : message.startsWith("Declaration")
+        ? "info"
+        : "success"
+  }));
+  const failures = entries.filter((entry) => entry.state === "error").length;
+  const successes = entries.filter((entry) => entry.state === "success").length;
+  const summary = document.createElement("p");
+  summary.className = "status-summary";
+  summary.textContent = failures
+    ? `Fill finished: ${successes} successful; ${failures} need attention.`
+    : `Fill finished successfully: ${successes} items completed. Review the form before submitting.`;
+  fillStatus.append(summary);
+
   const list = document.createElement("ul");
-  for (const item of results) {
+  for (const entry of entries) {
     const line = document.createElement("li");
-    line.textContent = item;
+    line.className = `status-item status-item-${entry.state}`;
+    line.textContent = entry.message;
     list.append(line);
   }
   fillStatus.append(list);
-  fillStatus.dataset.state = results.some((item) => item.startsWith("Could not")) ? "error" : "success";
+  fillStatus.dataset.state = failures ? "mixed" : "success";
 }
 
 async function fillOpenForm() {
@@ -478,11 +506,12 @@ async function fillOpenForm() {
         attachedFiles.push({
           inputId: FILE_INPUT_IDS[key],
           key,
+          label: FILE_FIELD_LABELS[key],
           name: fileReply.name,
           size: fileReply.size
         });
       } catch (error) {
-        results.push(`Could not attach ${saved.name}: ${error.message}`);
+        results.push(`Could not attach ${FILE_FIELD_LABELS[key]} (${saved.name}): ${error.message}`);
       }
     }
 
@@ -495,15 +524,16 @@ async function fillOpenForm() {
           func: IISMPageFileAttachment.verifyFilesOnForm,
           args: [expectedFiles]
         });
-        const missing = new Set((verification?.result?.missing || []).map((file) => file.inputId));
+        if (!verification?.result) throw new Error("The IISM form did not return upload verification.");
+        const missing = new Set(verification.result.missing.map((file) => file.inputId));
         for (const file of attachedFiles) {
           results.push(missing.has(file.inputId)
-            ? `Could not verify ${file.name}: the IISM form no longer has it selected. Choose it manually and check that it stays selected.`
-            : `Verified on the IISM form: ${file.name}.`);
+            ? `Could not verify ${file.label} (${file.name}): the IISM form no longer has it selected. Choose it manually and check that it stays selected.`
+            : `Verified ${file.label} on the IISM form: ${file.name}.`);
         }
       } catch (error) {
         for (const file of attachedFiles) {
-          results.push(`Could not verify ${file.name} on the IISM form: ${error.message}`);
+          results.push(`Could not verify ${file.label} (${file.name}) on the IISM form: ${error.message}`);
         }
       }
     }

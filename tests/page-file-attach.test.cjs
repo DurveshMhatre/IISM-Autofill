@@ -53,12 +53,16 @@ class FakeDataTransfer {
 }
 
 function makeHarness(options = {}) {
-  const input = new FakeInput(options);
+  const inputs = new Map([
+    ["FupPhototOfApplicant", new FakeInput(options)],
+    ["FupBirthCertificate", new FakeInput(options)],
+    ["FupCurrentEmployment", new FakeInput(options)]
+  ]);
   const sandbox = {
     atob: (text) => Buffer.from(text, "base64").toString("binary"),
     DataTransfer: FakeDataTransfer,
     document: {
-      getElementById: (id) => id === "FupPhototOfApplicant" ? input : null
+      getElementById: (id) => inputs.get(id) || null
     },
     Event: FakeEvent,
     File: FakeFile,
@@ -66,11 +70,11 @@ function makeHarness(options = {}) {
     setTimeout
   };
   vm.runInNewContext(attachSource, sandbox);
-  return { input, api: sandbox.IISMPageFileAttachment };
+  return { inputs, api: sandbox.IISMPageFileAttachment };
 }
 
 test("attaches a PDF in the page world and verifies the selected input", async () => {
-  const { input, api } = makeHarness();
+  const { inputs, api } = makeHarness();
   const dataUrl = `data:application/pdf;base64,${Buffer.from("%PDF-1.4 test").toString("base64")}`;
   const result = await api.attachFileToForm(
     "applicantPhoto",
@@ -81,6 +85,7 @@ test("attaches a PDF in the page world and verifies the selected input", async (
   );
 
   assert.equal(result.ok, true);
+  const input = inputs.get("FupPhototOfApplicant");
   assert.equal(input.files[0].name, "applicant.pdf");
   assert.deepEqual(input.events, ["input", "change"]);
   assert.equal(api.verifyFilesOnForm([{
@@ -88,6 +93,37 @@ test("attaches a PDF in the page world and verifies the selected input", async (
     name: "applicant.pdf",
     size: Buffer.byteLength("%PDF-1.4 test")
   }]).ok, true);
+});
+
+test("attaches date-of-birth proof to the correct IISM upload field", async () => {
+  const { inputs, api } = makeHarness();
+  const dataUrl = `data:application/pdf;base64,${Buffer.from("birth proof").toString("base64")}`;
+  const result = await api.attachFileToForm(
+    "birthCertificate",
+    dataUrl,
+    "birth-certificate.pdf",
+    "application/pdf",
+    500 * 1024
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(inputs.get("FupBirthCertificate").files[0].name, "birth-certificate.pdf");
+  assert.equal(inputs.get("FupPhototOfApplicant").files.length, 0);
+});
+
+test("attaches current-employment proof to its mapped IISM upload field", async () => {
+  const { inputs, api } = makeHarness();
+  const dataUrl = `data:application/pdf;base64,${Buffer.from("employment proof").toString("base64")}`;
+  const result = await api.attachFileToForm(
+    "currentEmployment",
+    dataUrl,
+    "employment-proof.pdf",
+    "application/pdf",
+    500 * 1024
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(inputs.get("FupCurrentEmployment").files[0].name, "employment-proof.pdf");
 });
 
 test("reports failure when the page clears the file during its change handler", async () => {

@@ -89,6 +89,45 @@ main {
   color: #17683a;
 }
 
+.status[data-state="mixed"] {
+  background: #f4f6fa;
+  color: #344054;
+}
+
+.status-summary {
+  margin: 0 0 7px;
+  font-weight: 650;
+}
+
+.status ul {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.status-item {
+  padding: 6px 8px;
+  border-radius: 6px;
+  line-height: 1.4;
+}
+
+.status-item-success {
+  background: #eaf8ef;
+  color: #17683a;
+}
+
+.status-item-error {
+  background: #fff0ef;
+  color: #8c2520;
+}
+
+.status-item-info {
+  background: #eaf0ff;
+  color: #20386f;
+}
+
 .privacy-note {
   margin: 0 0 12px;
   color: #536078;
