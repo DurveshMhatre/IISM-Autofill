@@ -50,7 +50,7 @@ class FakeSelect {
   }
 }
 
-function makeHarness() {
+function makeHarness({ rejectFiles = false } = {}) {
   const elements = new Map();
   const inputIds = [
     "txtName", "txtFatherName", "txtNationality", "txtDateOfBirth",
@@ -61,7 +61,12 @@ function makeHarness() {
     "txtEmergencyContactPhone", "FupPhototOfApplicant", "chkIAgree"
   ];
   for (const id of inputIds) {
-    elements.set(id, new FakeInput(id, id.startsWith("Fup") ? "file" : "text"));
+    const isFile = id.startsWith("Fup");
+    const input = new FakeInput(id, isFile ? "file" : "text");
+    if (isFile && rejectFiles) {
+      Object.defineProperty(input, "files", { get: () => [], set: () => {} });
+    }
+    elements.set(id, input);
   }
 
   const options = (names) => [
@@ -180,4 +185,31 @@ test("rejects images above the documented size limit", async () => {
   assert.equal(reply.ok, false);
   assert.match(reply.error, /exceeds 500 KB/);
   assert.equal(elements.get("FupPhototOfApplicant").files.length, 0);
+});
+
+test("attaches a JPG that the browser reported without a MIME type", async () => {
+  const { elements, send } = makeHarness();
+  const dataUrl = `data:application/octet-stream;base64,${Buffer.from("test image").toString("base64")}`;
+  const reply = await send({
+    type: "iism-attach-file",
+    key: "applicantPhoto",
+    file: { name: "portrait.JPG", type: "", dataUrl }
+  });
+
+  assert.equal(reply.ok, true);
+  assert.equal(elements.get("FupPhototOfApplicant").files[0].type, "image/jpeg");
+  assert.equal(elements.get("FupPhototOfApplicant").files[0].name, "portrait.JPG");
+});
+
+test("reports a failure when the page does not keep the attached file", async () => {
+  const { send } = makeHarness({ rejectFiles: true });
+  const dataUrl = `data:image/jpeg;base64,${Buffer.from("test image").toString("base64")}`;
+  const reply = await send({
+    type: "iism-attach-file",
+    key: "applicantPhoto",
+    file: { name: "portrait.jpg", type: "image/jpeg", dataUrl }
+  });
+
+  assert.equal(reply.ok, false);
+  assert.match(reply.error, /Attach it manually/);
 });

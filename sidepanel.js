@@ -3,7 +3,28 @@ const DB_NAME = "iism-form-assistant";
 const DB_VERSION = 1;
 const STORE_NAME = "documents";
 const MAX_FILE_BYTES = 500 * 1024;
-const ALLOWED_FILE_TYPES = new Set(["image/jpeg", "image/png"]);
+const MIME_ALIASES = {
+  "image/jpeg": "image/jpeg",
+  "image/jpg": "image/jpeg",
+  "image/pjpeg": "image/jpeg",
+  "image/png": "image/png",
+  "image/x-png": "image/png"
+};
+const MIME_BY_EXTENSION = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png"
+};
+
+// Some JPG and PNG files reach Chrome with an empty or non-standard MIME type,
+// so the file name is used as a fallback before a document is refused.
+function resolveImageType(name, type) {
+  const mime = String(type || "").trim().toLowerCase();
+  if (MIME_ALIASES[mime]) return MIME_ALIASES[mime];
+  if (mime && mime !== "application/octet-stream") return null;
+  const extension = (/\.([a-z0-9]+)$/i.exec(String(name || "")) || [])[1];
+  return MIME_BY_EXTENSION[String(extension || "").toLowerCase()] || null;
+}
 
 const sections = [
   {
@@ -302,11 +323,18 @@ async function saveDocument(key, input) {
   const file = input.files?.[0];
   if (!file) return;
 
-  if (!ALLOWED_FILE_TYPES.has(file.type) || file.size > MAX_FILE_BYTES) {
+  const imageType = resolveImageType(file.name, file.type);
+  const problem = !imageType
+    ? "This file type is not supported. Choose a JPG, JPEG, or PNG image."
+    : file.size > MAX_FILE_BYTES
+      ? `This file is ${Math.ceil(file.size / 1024)} KB. Files must be 500 KB or smaller.`
+      : "";
+
+  if (problem) {
     input.value = "";
     try {
       await documentTransaction("readwrite", (store) => store.delete(key));
-      state.textContent = "Choose a JPG or PNG file no larger than 500 KB.";
+      state.textContent = problem;
       state.dataset.state = "error";
       state.nextElementSibling.hidden = true;
     } catch {
@@ -320,7 +348,7 @@ async function saveDocument(key, input) {
     await documentTransaction("readwrite", (store) => store.put({
       blob: file,
       name: file.name,
-      type: file.type,
+      type: imageType,
       size: file.size
     }, key));
     state.textContent = `Saved locally: ${file.name}`;

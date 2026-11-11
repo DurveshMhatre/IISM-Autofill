@@ -41,7 +41,28 @@
     ["vegetarianOrNon", "ddlVegetarianOrNon", "Vegetarian / non-vegetarian"]
   ];
   const MAX_FILE_BYTES = 500 * 1024;
-  const ALLOWED_FILE_TYPES = new Set(["image/jpeg", "image/png"]);
+  const MIME_ALIASES = {
+    "image/jpeg": "image/jpeg",
+    "image/jpg": "image/jpeg",
+    "image/pjpeg": "image/jpeg",
+    "image/png": "image/png",
+    "image/x-png": "image/png"
+  };
+  const MIME_BY_EXTENSION = {
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png"
+  };
+
+  // Browsers report an empty or non-standard MIME type for some JPG and PNG
+  // files, so the file name is used as a fallback before rejecting a document.
+  function resolveImageType(name, type) {
+    const mime = String(type || "").trim().toLowerCase();
+    if (MIME_ALIASES[mime]) return MIME_ALIASES[mime];
+    if (mime && mime !== "application/octet-stream") return null;
+    const extension = (/\.([a-z0-9]+)$/i.exec(String(name || "")) || [])[1];
+    return MIME_BY_EXTENSION[String(extension || "").toLowerCase()] || null;
+  }
 
   function normalize(text) {
     return (text || "")
@@ -157,16 +178,18 @@
     return match ? `${match[3]}/${match[2]}/${match[1]}` : value;
   }
 
-  function decodeDataUrl(dataUrl) {
-    const match = /^data:(image\/(?:jpeg|png));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl || "");
-    if (!match) throw new Error("Only JPG and PNG image files can be attached.");
-    const binary = atob(match[2]);
+  function decodeImageBytes(dataUrl) {
+    const match = /^data:([^,]*);base64,([\s\S]+)$/.exec(String(dataUrl || "").trim());
+    if (!match || !/^[A-Za-z0-9+/=]+$/.test(match[2].trim())) {
+      throw new Error("The saved file could not be read. Choose this document again.");
+    }
+    const binary = atob(match[2].trim());
     if (binary.length > MAX_FILE_BYTES) throw new Error("The selected file exceeds 500 KB.");
     const bytes = new Uint8Array(binary.length);
     for (let index = 0; index < binary.length; index += 1) {
       bytes[index] = binary.charCodeAt(index);
     }
-    return new File([bytes], "upload", { type: match[1] });
+    return bytes;
   }
 
   function attachFile(key, metadata) {
@@ -176,17 +199,23 @@
     if (!(input instanceof HTMLInputElement) || input.type !== "file") {
       throw new Error("The matching upload field was not found on the page.");
     }
-    const file = decodeDataUrl(metadata.dataUrl);
-    if (!ALLOWED_FILE_TYPES.has(file.type)) {
-      throw new Error("Only JPG and PNG image files can be attached.");
+    const imageType = resolveImageType(metadata.name, metadata.type);
+    if (!imageType) {
+      throw new Error("Only JPG and JPEG and PNG images can be attached to this field.");
     }
-    const namedFile = new File([file], metadata.name || "upload", { type: file.type });
+    const bytes = decodeImageBytes(metadata.dataUrl);
+    const imageName = metadata.name || "upload";
     const transfer = new DataTransfer();
-    transfer.items.add(namedFile);
+    transfer.items.add(new File([bytes], imageName, { type: imageType }));
     input.files = transfer.files;
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.dispatchEvent(new Event("change", { bubbles: true }));
-    return `Attached ${namedFile.name}.`;
+
+    // Confirm the page actually kept the file instead of reporting a false success.
+    if (!input.files || input.files.length === 0) {
+      throw new Error("The page did not keep this file. Attach it manually on the form.");
+    }
+    return `Attached ${input.files[0].name || imageName}.`;
   }
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
