@@ -3,6 +3,16 @@ const DB_NAME = "iism-form-assistant";
 const DB_VERSION = 1;
 const STORE_NAME = "documents";
 const MAX_FILE_BYTES = 500 * 1024;
+const FILE_INPUT_IDS = {
+  birthCertificate: "FupBirthCertificate",
+  domicileProof: "FupDomicileAttachProof",
+  educationProof: "FupEducationQualification",
+  skiCertificate: "FupAnyAdventureCoursePhoto",
+  currentEmployment: "FupCurrentEmployment",
+  applicantPhoto: "FupPhototOfApplicant",
+  applicantSignature: "FupSignatureOfAppicant",
+  parentGuardianSignature: "FupParentGuardianSignature"
+};
 const MIME_BY_EXTENSION = {
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
@@ -450,25 +460,51 @@ async function fillOpenForm() {
     const results = [...reply.results];
 
     await Promise.all(fileSaveTasks.values());
+    const attachedFiles = [];
     for (const [key, input] of inputs) {
       if (input.type !== "file") continue;
       const saved = await documentTransaction("readonly", (store) => store.get(key));
       if (!saved) continue;
       try {
         const dataUrl = await blobToDataUrl(saved.blob);
-        const fileReply = await sendToPage(tab.id, {
-          type: "iism-attach-file",
-          key,
-          file: {
-            name: saved.name,
-            type: saved.type,
-            dataUrl
-          }
+        const [injection] = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          world: "MAIN",
+          func: IISMPageFileAttachment.attachFileToForm,
+          args: [key, dataUrl, saved.name, saved.type, MAX_FILE_BYTES]
         });
-        if (!fileReply?.ok) throw new Error(fileReply?.error || "Page rejected the file.");
-        results.push(`Attached ${saved.name}. Check that it appears in the IISM form.`);
+        const fileReply = injection?.result;
+        if (!fileReply?.ok) throw new Error(fileReply?.error || "The IISM page rejected the file.");
+        attachedFiles.push({
+          inputId: FILE_INPUT_IDS[key],
+          key,
+          name: fileReply.name,
+          size: fileReply.size
+        });
       } catch (error) {
         results.push(`Could not attach ${saved.name}: ${error.message}`);
+      }
+    }
+
+    if (attachedFiles.length) {
+      try {
+        const expectedFiles = attachedFiles.map(({ inputId, name, size }) => ({ inputId, name, size }));
+        const [verification] = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          world: "MAIN",
+          func: IISMPageFileAttachment.verifyFilesOnForm,
+          args: [expectedFiles]
+        });
+        const missing = new Set((verification?.result?.missing || []).map((file) => file.inputId));
+        for (const file of attachedFiles) {
+          results.push(missing.has(file.inputId)
+            ? `Could not verify ${file.name}: the IISM form no longer has it selected. Choose it manually and check that it stays selected.`
+            : `Verified on the IISM form: ${file.name}.`);
+        }
+      } catch (error) {
+        for (const file of attachedFiles) {
+          results.push(`Could not verify ${file.name} on the IISM form: ${error.message}`);
+        }
       }
     }
     showResults(results);

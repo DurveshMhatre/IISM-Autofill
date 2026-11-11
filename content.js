@@ -21,17 +21,6 @@
     emergencyContactPhone: "txtEmergencyContactPhone"
   };
 
-  const FILE_FIELDS = {
-    birthCertificate: "FupBirthCertificate",
-    domicileProof: "FupDomicileAttachProof",
-    educationProof: "FupEducationQualification",
-    skiCertificate: "FupAnyAdventureCoursePhoto",
-    currentEmployment: "FupCurrentEmployment",
-    applicantPhoto: "FupPhototOfApplicant",
-    applicantSignature: "FupSignatureOfAppicant",
-    parentGuardianSignature: "FupParentGuardianSignature"
-  };
-
   const SELECT_FIELDS = [
     ["courseName", "ddlCourse", "Course"],
     ["courseLevel", "ddlCourseLevel", "Course level"],
@@ -40,24 +29,6 @@
     ["educationQualification", "ddlEduationQualification", "Education qualification"],
     ["vegetarianOrNon", "ddlVegetarianOrNon", "Vegetarian / non-vegetarian"]
   ];
-  const MAX_FILE_BYTES = 500 * 1024;
-  const MIME_BY_EXTENSION = {
-    jpg: "image/jpeg",
-    jpeg: "image/jpeg",
-    jpe: "image/jpeg",
-    png: "image/png",
-    pdf: "application/pdf"
-  };
-
-  // Any file type is accepted. The file name is used only to give a file a
-  // useful MIME type when the browser does not report one for it.
-  function resolveFileType(name, type) {
-    const mime = String(type || "").trim().toLowerCase();
-    if (mime && mime !== "application/octet-stream") return mime;
-    const extension = (/\.([a-z0-9]+)$/i.exec(String(name || "")) || [])[1];
-    return MIME_BY_EXTENSION[String(extension || "").toLowerCase()] || "application/octet-stream";
-  }
-
   function normalize(text) {
     return (text || "")
       .normalize("NFKC")
@@ -172,44 +143,6 @@
     return match ? `${match[3]}/${match[2]}/${match[1]}` : value;
   }
 
-  function decodeFileBytes(dataUrl) {
-    const match = /^data:([^,]*);base64,([\s\S]+)$/.exec(String(dataUrl || "").trim());
-    if (!match || !/^[A-Za-z0-9+/=]+$/.test(match[2].trim())) {
-      throw new Error("The saved file could not be read. Choose this document again.");
-    }
-    const binary = atob(match[2].trim());
-    if (binary.length > MAX_FILE_BYTES) throw new Error("The selected file exceeds 500 KB.");
-    const bytes = new Uint8Array(binary.length);
-    for (let index = 0; index < binary.length; index += 1) {
-      bytes[index] = binary.charCodeAt(index);
-    }
-    return bytes;
-  }
-
-  function attachFile(key, metadata) {
-    const id = FILE_FIELDS[key];
-    if (!id) throw new Error("This file field is not supported.");
-    const input = document.getElementById(id);
-    if (!(input instanceof HTMLInputElement) || input.type !== "file") {
-      throw new Error("The matching upload field was not found on the page.");
-    }
-    const bytes = decodeFileBytes(metadata.dataUrl);
-    const fileName = metadata.name || "upload";
-    const transfer = new DataTransfer();
-    transfer.items.add(new File([bytes], fileName, {
-      type: resolveFileType(fileName, metadata.type)
-    }));
-    input.files = transfer.files;
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    input.dispatchEvent(new Event("change", { bubbles: true }));
-
-    // Confirm the page actually kept the file instead of reporting a false success.
-    if (!input.files || input.files.length === 0) {
-      throw new Error("The page did not keep this file. Attach it manually on the form.");
-    }
-    return `Attached ${input.files[0].name || fileName}.`;
-  }
-
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (location.origin !== "https://admission.iismgulmarg.in" ||
         location.pathname.toLowerCase() !== "/admission_form.aspx") return false;
@@ -221,14 +154,6 @@
       return true;
     }
 
-    if (message?.type === "iism-attach-file") {
-      try {
-        sendResponse({ ok: true, result: attachFile(message.key, message.file || {}) });
-      } catch (error) {
-        sendResponse({ ok: false, error: error.message });
-      }
-      return false;
-    }
     return false;
   });
 })();
