@@ -23,6 +23,25 @@ const FILE_FIELD_LABELS = {
   applicantSignature: "Applicant signature",
   parentGuardianSignature: "Parent / guardian signature"
 };
+const IMAGE_ONLY_UPLOADS = new Set([
+  "birthCertificate",
+  "educationProof",
+  "applicantPhoto",
+  "applicantSignature",
+  "parentGuardianSignature"
+]);
+const REQUIRED_UPLOADS = new Set([
+  "birthCertificate",
+  "educationProof",
+  "applicantPhoto",
+  "applicantSignature"
+]);
+const IMAGE_MIME_ALIASES = {
+  "image/jpg": "image/jpeg",
+  "image/pjpeg": "image/jpeg",
+  "image/x-png": "image/png"
+};
+const ALLOWED_IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png"]);
 const MIME_BY_EXTENSION = {
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
@@ -31,13 +50,27 @@ const MIME_BY_EXTENSION = {
   pdf: "application/pdf"
 };
 
-// Any file type is accepted. The file name is used only to give a file a
-// useful MIME type when the browser does not report one for it.
+// Infer a MIME type from the file name when the browser reports none.
 function resolveFileType(name, type) {
   const mime = String(type || "").trim().toLowerCase();
+  if (IMAGE_MIME_ALIASES[mime]) return IMAGE_MIME_ALIASES[mime];
   if (mime && mime !== "application/octet-stream") return mime;
   const extension = (/\.([a-z0-9]+)$/i.exec(String(name || "")) || [])[1];
   return MIME_BY_EXTENSION[String(extension || "").toLowerCase()] || "application/octet-stream";
+}
+
+function isAllowedForIismField(key, file) {
+  if (!IMAGE_ONLY_UPLOADS.has(key)) return true;
+  const extension = (/\.([a-z0-9]+)$/i.exec(String(file.name || "")) || [])[1]?.toLowerCase();
+  const mime = resolveFileType(file.name, file.type);
+  return ["jpg", "jpeg", "png"].includes(extension) &&
+    ALLOWED_IMAGE_MIME_TYPES.has(mime);
+}
+
+function formatRequirementForField(key) {
+  return IMAGE_ONLY_UPLOADS.has(key)
+    ? "IISM requires a JPG/JPEG/PNG image here (maximum 500 KB). Convert the PDF to an image, then choose it again."
+    : "Choose a file type accepted by the IISM form (maximum 500 KB).";
 }
 
 const sections = [
@@ -58,7 +91,7 @@ const sections = [
       ["fatherName", "Father's name"],
       ["nationality", "Nationality"],
       ["dateOfBirth", "Date of birth", "Choose a date.", "date"],
-      ["birthCertificate", "Date-of-birth proof", "Any file type, maximum 500 KB", "file"],
+      ["birthCertificate", "Date-of-birth proof", "JPG/JPEG/PNG only, maximum 500 KB (IISM requirement)", "file"],
       ["domicile", "Domicile"],
       ["domicileProof", "Domicile proof", "Any file type, maximum 500 KB", "file"]
     ]
@@ -83,7 +116,7 @@ const sections = [
         "Graduation",
         "Post graduation"
       ]],
-      ["educationProof", "Education proof", "Any file type, maximum 500 KB", "file"],
+      ["educationProof", "Education proof", "JPG/JPEG/PNG only, maximum 500 KB (IISM requirement)", "file"],
       ["skiCertificate", "Basic / intermediate skiing certificate", "Any file type, maximum 500 KB", "file"],
       ["currentEmployment", "Current employment proof", "Any file type, maximum 500 KB", "file"]
     ]
@@ -106,8 +139,8 @@ const sections = [
   {
     title: "Photo and signatures",
     fields: [
-      ["applicantPhoto", "Applicant photo", "Any file type, maximum 500 KB", "file"],
-      ["applicantSignature", "Applicant signature", "Any file type, maximum 500 KB", "file"]
+      ["applicantPhoto", "Applicant photo", "JPG/JPEG/PNG only, maximum 500 KB (IISM requirement)", "file"],
+      ["applicantSignature", "Applicant signature", "JPG/JPEG/PNG only, maximum 500 KB (IISM requirement)", "file"]
     ]
   },
   {
@@ -115,7 +148,7 @@ const sections = [
     fields: [
       ["emergencyContactName", "Emergency contact name"],
       ["emergencyContactPhone", "Emergency contact phone"],
-      ["parentGuardianSignature", "Parent / guardian signature", "For applicants under 18; any file type, maximum 500 KB", "file"]
+      ["parentGuardianSignature", "Parent / guardian signature", "For applicants under 18; JPG/JPEG/PNG only, maximum 500 KB", "file"]
     ]
   }
 ];
@@ -230,6 +263,7 @@ function renderFields() {
       input.dataset.key = key;
       if (kind === "file") {
         input.type = "file";
+        if (IMAGE_ONLY_UPLOADS.has(key)) input.accept = ".jpg,.jpeg,.png,image/jpeg,image/png";
         input.setAttribute("aria-label", labelText);
         input.addEventListener("change", () => {
           const task = saveDocument(key, input);
@@ -336,17 +370,17 @@ async function saveDocument(key, input) {
   const file = input.files?.[0];
   if (!file) return;
 
+  if (!isAllowedForIismField(key, file)) {
+    input.value = "";
+    state.textContent = `This selection was not saved. ${formatRequirementForField(key)} Any previously saved file remains unchanged.`;
+    state.dataset.state = "error";
+    return;
+  }
+
   if (file.size > MAX_FILE_BYTES) {
     input.value = "";
-    try {
-      await documentTransaction("readwrite", (store) => store.delete(key));
-      state.textContent = `This file is ${Math.ceil(file.size / 1024)} KB. Files must be 500 KB or smaller.`;
-      state.dataset.state = "error";
-      state.nextElementSibling.hidden = true;
-    } catch {
-      state.textContent = "Invalid file. Could not remove the previously saved file; remove it manually.";
-      state.dataset.state = "error";
-    }
+    state.textContent = `This selection is ${Math.ceil(file.size / 1024)} KB and was not saved. Files must be 500 KB or smaller. Any previously saved file remains unchanged.`;
+    state.dataset.state = "error";
     return;
   }
 
@@ -426,7 +460,7 @@ function showResults(results) {
     message,
     state: message.startsWith("Could not") || message.startsWith("Skipped")
       ? "error"
-      : message.startsWith("Declaration")
+      : message.startsWith("Declaration") || message.startsWith("Green confirms")
         ? "info"
         : "success"
   }));
@@ -435,8 +469,8 @@ function showResults(results) {
   const summary = document.createElement("p");
   summary.className = "status-summary";
   summary.textContent = failures
-    ? `Fill finished: ${successes} successful; ${failures} need attention.`
-    : `Fill finished successfully: ${successes} items completed. Review the form before submitting.`;
+    ? `Form update finished: ${successes} items filled or selected; ${failures} need attention.`
+    : `Form update finished: ${successes} items filled or selected. Review the form before submitting.`;
   fillStatus.append(summary);
 
   const list = document.createElement("ul");
@@ -492,8 +526,16 @@ async function fillOpenForm() {
     for (const [key, input] of inputs) {
       if (input.type !== "file") continue;
       const saved = await documentTransaction("readonly", (store) => store.get(key));
-      if (!saved) continue;
+      if (!saved) {
+        if (REQUIRED_UPLOADS.has(key)) {
+          results.push(`Could not attach ${FILE_FIELD_LABELS[key]}: no file is saved. Choose a JPG/JPEG/PNG image up to 500 KB.`);
+        }
+        continue;
+      }
       try {
+        if (!isAllowedForIismField(key, saved)) {
+          throw new Error(formatRequirementForField(key));
+        }
         const dataUrl = await blobToDataUrl(saved.blob);
         const [injection] = await chrome.scripting.executeScript({
           target: { tabId: tab.id },
@@ -501,8 +543,12 @@ async function fillOpenForm() {
           func: IISMPageFileAttachment.attachFileToForm,
           args: [key, dataUrl, saved.name, saved.type, MAX_FILE_BYTES]
         });
+        if (injection?.error) {
+          throw new Error(injection.error.message || "The browser could not run the page upload script.");
+        }
         const fileReply = injection?.result;
-        if (!fileReply?.ok) throw new Error(fileReply?.error || "The IISM page rejected the file.");
+        if (!fileReply) throw new Error("The page upload script returned no result; no success is being reported.");
+        if (!fileReply.ok) throw new Error(fileReply.error || "The IISM page rejected the file.");
         attachedFiles.push({
           inputId: FILE_INPUT_IDS[key],
           key,
@@ -529,7 +575,7 @@ async function fillOpenForm() {
         for (const file of attachedFiles) {
           results.push(missing.has(file.inputId)
             ? `Could not verify ${file.label} (${file.name}): the IISM form no longer has it selected. Choose it manually and check that it stays selected.`
-            : `Verified ${file.label} on the IISM form: ${file.name}.`);
+            : `Selected ${file.label} in the IISM form: ${file.name}.`);
         }
       } catch (error) {
         for (const file of attachedFiles) {
@@ -537,6 +583,7 @@ async function fillOpenForm() {
         }
       }
     }
+    results.push("Green confirms fields were filled or files are selected in the browser. Only IISM can confirm receipt after you submit.");
     showResults(results);
   } catch (error) {
     fillStatus.textContent = `Could not fill the page: ${error.message}. Confirm the form is open and try again.`;
