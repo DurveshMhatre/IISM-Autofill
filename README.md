@@ -25,7 +25,7 @@ If Chrome shows an error, check that you selected the folder containing `manifes
 
 1. Click the extension's icon in Chrome to open it.
 2. Type your own information into the matching fields. The extension saves text and selected documents in this Chrome profile automatically.
-3. For a document, choose a JPG or PNG image no larger than 500 KB. Wait until the extension says it was saved.
+3. For a document, choose any file, such as a JPG, PNG, or PDF, no larger than 500 KB. Wait until the extension says it was saved.
 4. Open the IISM admission form in Chrome.
 5. Open the extension and click **Fill open IISM form**.
 6. Check the form carefully. Fix anything that is missing or incorrect.
@@ -52,7 +52,7 @@ This GitHub installation does not update itself. To get a newer version, downloa
 - Checks common formats such as email, phone number, and PIN code before filling.
 - Lets you collapse or expand profile sections.
 - Uses the currently visible choices on the IISM form rather than guessing dropdown values.
-- Supports user-selected JPG and PNG documents up to 500 KB each.
+- Supports user-selected documents in any file type, including JPG, PNG, and PDF, up to 500 KB each.
 
 The IISM website can change at any time. Check every field and document before submitting. Do not repeatedly submit test applications or send unnecessary traffic to the live admissions website.
 

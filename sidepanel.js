@@ -3,27 +3,21 @@ const DB_NAME = "iism-form-assistant";
 const DB_VERSION = 1;
 const STORE_NAME = "documents";
 const MAX_FILE_BYTES = 500 * 1024;
-const MIME_ALIASES = {
-  "image/jpeg": "image/jpeg",
-  "image/jpg": "image/jpeg",
-  "image/pjpeg": "image/jpeg",
-  "image/png": "image/png",
-  "image/x-png": "image/png"
-};
 const MIME_BY_EXTENSION = {
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
-  png: "image/png"
+  jpe: "image/jpeg",
+  png: "image/png",
+  pdf: "application/pdf"
 };
 
-// Some JPG and PNG files reach Chrome with an empty or non-standard MIME type,
-// so the file name is used as a fallback before a document is refused.
-function resolveImageType(name, type) {
+// Any file type is accepted. The file name is used only to give a file a
+// useful MIME type when the browser does not report one for it.
+function resolveFileType(name, type) {
   const mime = String(type || "").trim().toLowerCase();
-  if (MIME_ALIASES[mime]) return MIME_ALIASES[mime];
-  if (mime && mime !== "application/octet-stream") return null;
+  if (mime && mime !== "application/octet-stream") return mime;
   const extension = (/\.([a-z0-9]+)$/i.exec(String(name || "")) || [])[1];
-  return MIME_BY_EXTENSION[String(extension || "").toLowerCase()] || null;
+  return MIME_BY_EXTENSION[String(extension || "").toLowerCase()] || "application/octet-stream";
 }
 
 const sections = [
@@ -44,9 +38,9 @@ const sections = [
       ["fatherName", "Father's name"],
       ["nationality", "Nationality"],
       ["dateOfBirth", "Date of birth", "Choose a date.", "date"],
-      ["birthCertificate", "Date-of-birth proof", "JPG or PNG, maximum 500 KB", "file"],
+      ["birthCertificate", "Date-of-birth proof", "Any file type, maximum 500 KB", "file"],
       ["domicile", "Domicile"],
-      ["domicileProof", "Domicile proof", "JPG or PNG, maximum 500 KB", "file"]
+      ["domicileProof", "Domicile proof", "Any file type, maximum 500 KB", "file"]
     ]
   },
   {
@@ -69,9 +63,9 @@ const sections = [
         "Graduation",
         "Post graduation"
       ]],
-      ["educationProof", "Education proof", "JPG or PNG, maximum 500 KB", "file"],
-      ["skiCertificate", "Basic / intermediate skiing certificate", "JPG or PNG, maximum 500 KB", "file"],
-      ["currentEmployment", "Current employment proof", "JPG or PNG, maximum 500 KB", "file"]
+      ["educationProof", "Education proof", "Any file type, maximum 500 KB", "file"],
+      ["skiCertificate", "Basic / intermediate skiing certificate", "Any file type, maximum 500 KB", "file"],
+      ["currentEmployment", "Current employment proof", "Any file type, maximum 500 KB", "file"]
     ]
   },
   {
@@ -92,8 +86,8 @@ const sections = [
   {
     title: "Photo and signatures",
     fields: [
-      ["applicantPhoto", "Applicant photo", "JPG or PNG, maximum 500 KB", "file"],
-      ["applicantSignature", "Applicant signature", "JPG or PNG, maximum 500 KB", "file"]
+      ["applicantPhoto", "Applicant photo", "Any file type, maximum 500 KB", "file"],
+      ["applicantSignature", "Applicant signature", "Any file type, maximum 500 KB", "file"]
     ]
   },
   {
@@ -101,7 +95,7 @@ const sections = [
     fields: [
       ["emergencyContactName", "Emergency contact name"],
       ["emergencyContactPhone", "Emergency contact phone"],
-      ["parentGuardianSignature", "Parent / guardian signature", "For applicants under 18; JPG or PNG, maximum 500 KB", "file"]
+      ["parentGuardianSignature", "Parent / guardian signature", "For applicants under 18; any file type, maximum 500 KB", "file"]
     ]
   }
 ];
@@ -216,7 +210,6 @@ function renderFields() {
       input.dataset.key = key;
       if (kind === "file") {
         input.type = "file";
-        input.accept = ".jpg,.jpeg,.png,image/jpeg,image/png";
         input.setAttribute("aria-label", labelText);
         input.addEventListener("change", () => {
           const task = saveDocument(key, input);
@@ -323,18 +316,11 @@ async function saveDocument(key, input) {
   const file = input.files?.[0];
   if (!file) return;
 
-  const imageType = resolveImageType(file.name, file.type);
-  const problem = !imageType
-    ? "This file type is not supported. Choose a JPG, JPEG, or PNG image."
-    : file.size > MAX_FILE_BYTES
-      ? `This file is ${Math.ceil(file.size / 1024)} KB. Files must be 500 KB or smaller.`
-      : "";
-
-  if (problem) {
+  if (file.size > MAX_FILE_BYTES) {
     input.value = "";
     try {
       await documentTransaction("readwrite", (store) => store.delete(key));
-      state.textContent = problem;
+      state.textContent = `This file is ${Math.ceil(file.size / 1024)} KB. Files must be 500 KB or smaller.`;
       state.dataset.state = "error";
       state.nextElementSibling.hidden = true;
     } catch {
@@ -348,7 +334,7 @@ async function saveDocument(key, input) {
     await documentTransaction("readwrite", (store) => store.put({
       blob: file,
       name: file.name,
-      type: imageType,
+      type: resolveFileType(file.name, file.type),
       size: file.size
     }, key));
     state.textContent = `Saved locally: ${file.name}`;

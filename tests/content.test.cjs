@@ -58,7 +58,7 @@ function makeHarness({ rejectFiles = false } = {}) {
     "txtDistrictCity", "txtPincode", "txtMobileNo", "txtEmailId",
     "txtBloodGroup", "txtMedicalCategory", "txtHeight", "txtWeight",
     "txtWaist", "txtShoeSize", "txtEmergencyContactName",
-    "txtEmergencyContactPhone", "FupPhototOfApplicant", "chkIAgree"
+    "txtEmergencyContactPhone", "FupPhototOfApplicant", "FupEducationQualification", "chkIAgree"
   ];
   for (const id of inputIds) {
     const isFile = id.startsWith("Fup");
@@ -199,6 +199,19 @@ test("attaches a JPG that the browser reported without a MIME type", async () =>
   assert.equal(reply.ok, true);
   assert.equal(elements.get("FupPhototOfApplicant").files[0].type, "image/jpeg");
   assert.equal(elements.get("FupPhototOfApplicant").files[0].name, "portrait.JPG");
+});
+
+test("attaches a PDF to a mapped upload field", async () => {
+  const { elements, send } = makeHarness();
+  const dataUrl = `data:application/pdf;base64,${Buffer.from("%PDF-1.4 test").toString("base64")}`;
+  const reply = await send({
+    type: "iism-attach-file",
+    key: "educationProof",
+    file: { name: "marksheet.pdf", type: "application/pdf", dataUrl }
+  });
+
+  assert.equal(reply.ok, true);
+  assert.match(reply.result, /marksheet\.pdf/);
 });
 
 test("reports a failure when the page does not keep the attached file", async () => {
