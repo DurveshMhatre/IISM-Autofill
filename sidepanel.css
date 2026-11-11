@@ -1,0 +1,299 @@
+:root {
+  color-scheme: light;
+  font-family: Inter, "Segoe UI", Arial, sans-serif;
+  color: #172033;
+  background: #f5f7fb;
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 18px 16px;
+  color: #fff;
+  background: #15264f;
+}
+
+.brand-image {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  object-fit: cover;
+}
+
+.eyebrow {
+  margin: 0 0 3px;
+  color: #c4d2ff;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.3px;
+}
+
+.topbar .eyebrow a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.topbar .eyebrow a:hover,
+.topbar .eyebrow a:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+}
+
+main {
+  padding: 14px;
+}
+
+.notice,
+.status {
+  min-height: 0;
+  margin-bottom: 10px;
+  line-height: 1.45;
+}
+
+.notice:not(:empty),
+.status:not(:empty) {
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: #eaf0ff;
+  color: #20386f;
+}
+
+.notice[data-state="error"],
+.status[data-state="error"] {
+  background: #fff0ef;
+  color: #8c2520;
+}
+
+.notice[data-state="success"],
+.status[data-state="success"] {
+  background: #eaf8ef;
+  color: #17683a;
+}
+
+.privacy-note {
+  margin: 0 0 12px;
+  color: #536078;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.toolbar {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.button {
+  min-height: 38px;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 8px;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.button-primary {
+  color: #fff;
+  background: #2448a1;
+}
+
+.button-primary:hover:not(:disabled) {
+  background: #1b397f;
+}
+
+.button-quiet {
+  color: #44516b;
+  background: #e8ebf2;
+}
+
+.callout {
+  margin: 10px 0 14px;
+  padding: 10px;
+  border-left: 3px solid #e1a32d;
+  border-radius: 5px;
+  background: #fff7e7;
+  color: #604713;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.section {
+  margin: 0 0 12px;
+  overflow: hidden;
+  border: 1px solid #e1e5ee;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.section h2 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.section-toggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 12px;
+  border: 0;
+  background: transparent;
+  color: #1b2d59;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+}
+
+.section-toggle:hover {
+  background: #f7f8fc;
+}
+
+.section-toggle:focus-visible {
+  outline: 2px solid #4f79d8;
+  outline-offset: -3px;
+}
+
+.section-chevron {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  margin-right: 3px;
+  border-right: 2px solid #66728a;
+  border-bottom: 2px solid #66728a;
+  transform: rotate(45deg);
+  transition: transform 140ms ease;
+}
+
+.section-toggle[aria-expanded="true"] .section-chevron {
+  transform: rotate(225deg);
+}
+
+.section-content {
+  padding: 0 12px 12px;
+}
+
+.section-content > .field-help {
+  margin: 0 0 11px;
+}
+
+.field {
+  display: block;
+  margin: 0 0 10px;
+}
+
+.field:last-child {
+  margin-bottom: 0;
+}
+
+.field-label {
+  display: block;
+  margin-bottom: 5px;
+  color: #35415a;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.field input:not([type="file"]),
+.field select {
+  width: 100%;
+  min-height: 35px;
+  padding: 7px 9px;
+  border: 1px solid #cfd6e2;
+  border-radius: 6px;
+  outline: none;
+  background: #fff;
+  color: #182238;
+  font: inherit;
+}
+
+.field input:focus,
+.field select:focus {
+  border-color: #4f79d8;
+  box-shadow: 0 0 0 2px #4f79d833;
+}
+
+.field input[aria-invalid="true"] {
+  border-color: #b73535;
+}
+
+.validation-message {
+  display: block;
+  margin-top: 4px;
+  color: #a22922;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.field input[type="file"] {
+  display: block;
+  width: 100%;
+  font-size: 10px;
+}
+
+.remove-file {
+  margin-top: 6px;
+  padding: 5px 8px;
+  border: 1px solid #d7dce6;
+  border-radius: 6px;
+  background: #f5f7fb;
+  color: #44516b;
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.field-help,
+.file-state {
+  display: block;
+  margin-top: 4px;
+  color: #66728a;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.file-state[data-state="error"] {
+  color: #a22922;
+}
+
+footer {
+  padding: 2px 2px 12px;
+  color: #637087;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+footer p {
+  margin: 4px 0 6px;
+}
+
+a {
+  color: #2448a1;
+}

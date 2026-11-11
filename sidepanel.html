@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>IISM Autofil | Durvesh Developments</title>
+    <link rel="icon" type="image/png" href="icons/icon16.png">
+    <link rel="stylesheet" href="sidepanel.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <img class="brand-image" src="icons/icon48.png" alt="">
+      <div>
+        <p class="eyebrow">Built by <a href="https://durveshdevelopments.onrender.com/" target="_blank" rel="noopener noreferrer">Durvesh Developments</a></p>
+        <h1>IISM Autofil</h1>
+      </div>
+    </header>
+
+    <main>
+      <div id="pageNotice" class="notice" role="status"></div>
+      <p class="privacy-note">Your profile and selected documents stay in this browser. They are not sent to this extension's developer.</p>
+
+      <div class="toolbar">
+        <button id="fillButton" class="button button-primary" type="button" disabled>Fill open IISM form</button>
+        <button id="clearButton" class="button button-quiet" type="button">Clear saved data</button>
+      </div>
+      <div id="fillStatus" class="status" role="status" aria-live="polite"></div>
+
+      <div class="callout">
+        Autofill does not choose consent, submit the application, or guarantee a seat. Review every value and upload on the IISM page, then submit there yourself.
+      </div>
+
+      <form id="profileForm" autocomplete="on">
+        <div id="profileSections"></div>
+      </form>
+
+      <footer>
+        <p>Only use accurate applicant information. Dropdown values must match an option currently shown on the IISM page.</p>
+        <a href="privacy.html" target="_blank">Privacy details</a>
+      </footer>
+    </main>
+
+    <script src="field-validation.js"></script>
+    <script src="sidepanel.js"></script>
+  </body>
+</html>

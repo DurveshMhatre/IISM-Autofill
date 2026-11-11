@@ -1,0 +1,11 @@
+cookies.txt
+*.cookies
+*.cookie
+*.crx
+*.zip
+*.pem
+.env
+.env.*
+node_modules/
+.DS_Store
+Thumbs.db
