@@ -73,16 +73,31 @@ function formatRequirementForField(key) {
     : "Choose a file type accepted by the IISM form (maximum 500 KB).";
 }
 
+const COURSE_LEVELS = {
+  "Snow Skiing course at gulmarg": [
+    "Basic SSC",
+    "Intermediate SSC",
+    "Advance SSC",
+    "Snow Boarding"
+  ],
+  "Snow Skiing course at Kargil": [
+    "Basic Skiing course",
+    "Intermediate Skiing Course",
+    "Advance skiing course"
+  ],
+  "MOI course at gulmarg": []
+};
+
 const sections = [
   {
     title: "Course details",
     fields: [
-      ["courseName", "Course"],
-      ["courseLevel", "Course level"],
+      ["courseName", "Course", "", "select", Object.keys(COURSE_LEVELS)],
+      ["courseLevel", "Course level", "Options depend on the course you choose. MOI course has no course level.", "select", []],
       ["scheduleCourse", "Course schedule"],
       ["state", "State"]
     ],
-    help: "Enter the exact visible option text. Course choices come from the live IISM page."
+    help: "Course level choices change with the course you pick. The schedule of course list loads once admissions open."
   },
   {
     title: "Basic details",
@@ -210,6 +225,30 @@ function updateFieldValidation(key, input) {
   return !invalid;
 }
 
+function renderSelectChoices(select, choices) {
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "Select";
+  select.replaceChildren(placeholder);
+  for (const choice of choices) {
+    const option = document.createElement("option");
+    option.value = choice;
+    option.textContent = choice;
+    select.append(option);
+  }
+}
+
+function syncCourseLevelOptions() {
+  const courseSelect = inputs.get("courseName");
+  const levelSelect = inputs.get("courseLevel");
+  if (!courseSelect || !levelSelect) return;
+  const choices = COURSE_LEVELS[courseSelect.value] || [];
+  const previous = levelSelect.value;
+  renderSelectChoices(levelSelect, choices);
+  levelSelect.value = choices.includes(previous) ? previous : "";
+  levelSelect.disabled = choices.length === 0;
+}
+
 function renderFields() {
   sections.forEach((section, sectionIndex) => {
     const sectionElement = document.createElement("section");
@@ -294,17 +333,11 @@ function renderFields() {
       }
 
       if (kind === "select") {
-        const placeholder = document.createElement("option");
-        placeholder.value = "";
-        placeholder.textContent = "Select";
-        input.append(placeholder);
-        for (const choice of choices) {
-          const option = document.createElement("option");
-          option.value = choice;
-          option.textContent = choice;
-          input.append(option);
-        }
-        input.addEventListener("change", scheduleSave);
+        renderSelectChoices(input, choices);
+        input.addEventListener("change", () => {
+          if (key === "courseName") syncCourseLevelOptions();
+          scheduleSave();
+        });
       } else {
         input.type = kind === "date" ? "date" : "text";
         input.autocomplete = kind === "date" ? "bday" : "on";
@@ -409,6 +442,7 @@ async function loadSavedData() {
       input.value = key === "dateOfBirth"
         ? toDatePickerValue(profile[key] || "")
         : profile[key] || "";
+      if (key === "courseName") syncCourseLevelOptions();
       updateFieldValidation(key, input);
     }
 
