@@ -33,13 +33,26 @@ If Chrome shows an error, check that you selected the folder containing `manifes
 
 To remove saved profile information and documents, open the extension and click **Clear saved data**. To uninstall the extension, go to `chrome://extensions` and click **Remove** on its card.
 
+## Another Computer, Or A Cleared Browser
+
+Your details are saved inside the one Chrome browser on the one computer where you typed them. Nothing is stored online, so nothing travels between computers on its own. That also means clearing your browser data, or uninstalling the extension, can leave you with an empty form again.
+
+To protect yourself, use the two backup buttons:
+
+1. In the extension, click **Save backup file**. A file is downloaded, for example `iism-autofil-backup-2026-11-12.json`.
+2. Keep that file somewhere safe and private, such as your email, a USB stick, or your own cloud drive.
+3. On any other computer, install the extension, click **Load backup file**, and choose that `.json` file. Your details and your saved documents come back.
+
+A backup file holds your personal details and your documents. Anyone who opens the file can read them, so do not share it. Loading a backup replaces the details already saved in the extension with the details in the file.
+
 ## Updates
 
-This GitHub installation does not update itself. To get a newer version, download and extract the latest ZIP using the steps above. On `chrome://extensions`, remove the old copy and load the new folder. Your locally saved profile may be removed when you uninstall; keep your information available so you can enter it again.
+This GitHub installation does not update itself. To get a newer version, download and extract the latest ZIP using the steps above. On `chrome://extensions`, remove the old copy and load the new folder. Your locally saved profile may be removed when you uninstall, so click **Save backup file** first and you can load it back afterwards.
 
 ## Your Privacy
 
 - Profile information is saved in Chrome on your device. Selected documents are saved in the extension's local browser storage.
+- A backup file is only created when you click **Save backup file**. Your browser saves it to your computer, and the extension does not upload it anywhere.
 - The extension does not send your profile to its developer, use analytics, or store your information on a developer server.
 - When you choose to submit the application, the IISM website receives the information and documents you submit. Review that website's own privacy information.
 - The extension only fills the IISM form when you click its fill button. It does not click Submit, bypass CAPTCHA or OTP, or reserve seats.
@@ -53,6 +66,7 @@ This GitHub installation does not update itself. To get a newer version, downloa
 - Lets you collapse or expand profile sections.
 - Uses the currently visible choices on the IISM form rather than guessing dropdown values.
 - Stores selected documents locally, up to 500 KB each. It checks IISM's image-only requirement for the date-of-birth proof, education proof, applicant photo, and signatures; other fields remain subject to IISM's rules.
+- Saves your details and documents into one backup file, which you can load on another computer.
 - Shows whether a file is selected in the form. Only IISM can confirm that it received and accepted a file after you submit.
 
 The IISM website can change at any time. Check every field and document before submitting. Do not repeatedly submit test applications or send unnecessary traffic to the live admissions website.

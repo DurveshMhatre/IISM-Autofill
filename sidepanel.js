@@ -3,6 +3,8 @@ const DB_NAME = "iism-form-assistant";
 const DB_VERSION = 1;
 const STORE_NAME = "documents";
 const MAX_FILE_BYTES = 500 * 1024;
+const BACKUP_APP_ID = "iism-autofil";
+const BACKUP_VERSION = 1;
 const FILE_INPUT_IDS = {
   birthCertificate: "FupBirthCertificate",
   domicileProof: "FupDomicileAttachProof",
@@ -176,6 +178,9 @@ const pageNotice = document.querySelector("#pageNotice");
 const fillStatus = document.querySelector("#fillStatus");
 const fillButton = document.querySelector("#fillButton");
 const clearButton = document.querySelector("#clearButton");
+const exportButton = document.querySelector("#exportButton");
+const importButton = document.querySelector("#importButton");
+const importFileInput = document.querySelector("#importFileInput");
 const inputs = new Map();
 const validationMessages = new Map();
 const fileSaveTasks = new Map();
@@ -436,26 +441,8 @@ async function saveDocument(key, input) {
 async function loadSavedData() {
   try {
     const result = await chrome.storage.local.get(PROFILE_KEY);
-    const profile = result[PROFILE_KEY] || {};
-    for (const [key, input] of inputs) {
-      if (input.type === "file") continue;
-      input.value = key === "dateOfBirth"
-        ? toDatePickerValue(profile[key] || "")
-        : profile[key] || "";
-      if (key === "courseName") syncCourseLevelOptions();
-      updateFieldValidation(key, input);
-    }
-
-    for (const [key, input] of inputs) {
-      if (input.type !== "file") continue;
-      const saved = await documentTransaction("readonly", (store) => store.get(key));
-      if (saved) {
-        const state = document.querySelector(`#file-state-${key}`);
-        state.textContent = `Saved locally: ${saved.name}`;
-        state.dataset.state = "success";
-        state.nextElementSibling.hidden = false;
-      }
-    }
+    applyProfileToInputs(result[PROFILE_KEY] || {});
+    await refreshSavedFileStates();
   } catch {
     profileLoadError = true;
     pageNotice.textContent = "Local profile storage is unavailable in this browser.";
@@ -463,6 +450,35 @@ async function loadSavedData() {
   } finally {
     profileReady = true;
     await updatePageNotice();
+  }
+}
+
+function applyProfileToInputs(profile) {
+  for (const [key, input] of inputs) {
+    if (input.type === "file") continue;
+    input.value = key === "dateOfBirth"
+      ? toDatePickerValue(profile[key] || "")
+      : profile[key] || "";
+    if (key === "courseName") syncCourseLevelOptions();
+    updateFieldValidation(key, input);
+  }
+}
+
+async function refreshSavedFileStates() {
+  for (const [key, input] of inputs) {
+    if (input.type !== "file") continue;
+    const state = document.querySelector(`#file-state-${key}`);
+    if (!state) continue;
+    const saved = await documentTransaction("readonly", (store) => store.get(key));
+    if (saved) {
+      state.textContent = `Saved locally: ${saved.name}`;
+      state.dataset.state = "success";
+      state.nextElementSibling.hidden = false;
+    } else {
+      state.textContent = "";
+      delete state.dataset.state;
+      state.nextElementSibling.hidden = true;
+    }
   }
 }
 
@@ -677,6 +693,95 @@ async function removeDocument(key, input) {
   }
 }
 
+async function exportBackup() {
+  if (!window.confirm("Download a backup file? It contains your personal details and documents. Keep it private.")) return;
+  try {
+    clearTimeout(saveTimer);
+    await Promise.all(fileSaveTasks.values());
+    const documents = {};
+    for (const [key, input] of inputs) {
+      if (input.type !== "file") continue;
+      const saved = await documentTransaction("readonly", (store) => store.get(key));
+      if (!saved) continue;
+      documents[key] = {
+        name: saved.name,
+        type: saved.type,
+        data: await blobToDataUrl(saved.blob)
+      };
+    }
+    const backup = {
+      app: BACKUP_APP_ID,
+      version: BACKUP_VERSION,
+      exportedAt: new Date().toISOString(),
+      profile: readProfileFromForm(),
+      documents
+    };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(backup)], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `iism-autofil-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    const count = Object.keys(documents).length;
+    pageNotice.textContent = `Backup downloaded with ${count} document${count === 1 ? "" : "s"}. Keep this file private and load it on any other computer.`;
+    pageNotice.dataset.state = "success";
+  } catch {
+    pageNotice.textContent = "Could not create a backup file. Please try again.";
+    pageNotice.dataset.state = "error";
+  }
+}
+
+async function importBackup(file) {
+  try {
+    const backup = JSON.parse(await file.text());
+    if (!backup || backup.app !== BACKUP_APP_ID || typeof backup.profile !== "object" || backup.profile === null) {
+      throw new Error("This file was not created by IISM Autofil.");
+    }
+
+    await chrome.storage.local.set({ [PROFILE_KEY]: backup.profile });
+    applyProfileToInputs(backup.profile);
+
+    let restored = 0;
+    const skipped = [];
+    for (const [key, input] of inputs) {
+      if (input.type !== "file") continue;
+      const document_ = backup.documents?.[key];
+      if (!document_?.data || typeof document_.data !== "string") continue;
+      const blob = dataUrlToBlob(document_.data);
+      const name = typeof document_.name === "string" && document_.name ? document_.name : "document";
+      if (blob.size > MAX_FILE_BYTES || !isAllowedForIismField(key, { name, type: blob.type })) {
+        skipped.push(FILE_FIELD_LABELS[key] || key);
+        continue;
+      }
+      await documentTransaction("readwrite", (store) => store.put({
+        blob,
+        name,
+        type: resolveFileType(name, blob.type),
+        size: blob.size
+      }, key));
+      restored++;
+    }
+
+    await refreshSavedFileStates();
+    pageNotice.textContent = skipped.length
+      ? `Backup loaded with ${restored} document(s). These files are not accepted by the IISM form, so choose them again: ${skipped.join(", ")}.`
+      : `Backup loaded with ${restored} document${restored === 1 ? "" : "s"}. Check every detail before you fill the IISM form.`;
+    pageNotice.dataset.state = skipped.length ? "error" : "success";
+  } catch (error) {
+    pageNotice.textContent = `Could not load that backup file. ${error.message}`;
+    pageNotice.dataset.state = "error";
+  }
+}
+
+function dataUrlToBlob(dataUrl) {
+  const match = /^data:([^;,]*)(;base64)?,/.exec(dataUrl);
+  if (!match) throw new Error("The backup contains an unreadable document.");
+  const binary = atob(dataUrl.slice(match[0].length));
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return new Blob([bytes], { type: match[1] || "application/octet-stream" });
+}
+
 async function updatePageNotice() {
   const tab = await getActiveIismTab();
   fillButton.disabled = !profileReady;
@@ -697,3 +802,10 @@ loadSavedData();
 updatePageNotice();
 fillButton.addEventListener("click", fillOpenForm);
 clearButton.addEventListener("click", removeAllSavedData);
+exportButton.addEventListener("click", exportBackup);
+importButton.addEventListener("click", () => importFileInput.click());
+importFileInput.addEventListener("change", async () => {
+  const file = importFileInput.files?.[0];
+  if (file) await importBackup(file);
+  importFileInput.value = "";
+});

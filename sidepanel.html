@@ -22,12 +22,19 @@
 
       <div class="toolbar">
         <button id="fillButton" class="button button-primary" type="button" disabled>Fill open IISM form</button>
+        <button id="exportButton" class="button button-quiet" type="button">Save backup file</button>
+        <button id="importButton" class="button button-quiet" type="button">Load backup file</button>
         <button id="clearButton" class="button button-quiet" type="button">Clear saved data</button>
+        <input id="importFileInput" type="file" accept="application/json,.json" hidden>
       </div>
       <div id="fillStatus" class="status" role="status" aria-live="polite"></div>
 
       <div class="callout">
         Autofill does not choose consent, submit the application, or guarantee a seat. Review every value and upload on the IISM page, then submit there yourself.
+      </div>
+
+      <div class="callout">
+        Using another computer, or worried about clearing your browser? Use <strong>Save backup file</strong> to download your details and documents as one file, then <strong>Load backup file</strong> on the other computer. The backup stays on your computer and is never uploaded anywhere.
       </div>
 
       <form id="profileForm" autocomplete="on">
