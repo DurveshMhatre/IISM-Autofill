@@ -5,16 +5,7 @@ const STORE_NAME = "documents";
 const MAX_FILE_BYTES = 500 * 1024;
 const BACKUP_APP_ID = "iism-autofil";
 const BACKUP_VERSION = 1;
-const FILE_INPUT_IDS = {
-  birthCertificate: "FupBirthCertificate",
-  domicileProof: "FupDomicileAttachProof",
-  educationProof: "FupEducationQualification",
-  skiCertificate: "FupAnyAdventureCoursePhoto",
-  currentEmployment: "FupCurrentEmployment",
-  applicantPhoto: "FupPhototOfApplicant",
-  applicantSignature: "FupSignatureOfAppicant",
-  parentGuardianSignature: "FupParentGuardianSignature"
-};
+const SYNC_PREF_KEY = "iismSyncEnabled";
 const FILE_FIELD_LABELS = {
   birthCertificate: "Date-of-birth proof",
   domicileProof: "Domicile proof",
@@ -179,8 +170,11 @@ const fillStatus = document.querySelector("#fillStatus");
 const fillButton = document.querySelector("#fillButton");
 const clearButton = document.querySelector("#clearButton");
 const exportButton = document.querySelector("#exportButton");
+const shareButton = document.querySelector("#shareButton");
 const importButton = document.querySelector("#importButton");
 const importFileInput = document.querySelector("#importFileInput");
+const syncOption = document.querySelector("#syncOption");
+const syncToggle = document.querySelector("#syncToggle");
 const inputs = new Map();
 const validationMessages = new Map();
 const fileSaveTasks = new Map();
@@ -188,6 +182,7 @@ let saveTimer;
 let databasePromise;
 let profileReady = false;
 let profileLoadError = false;
+let syncEnabled = false;
 
 function openDatabase() {
   if (databasePromise) return databasePromise;
@@ -391,9 +386,46 @@ function readProfileFromForm() {
 
 async function saveProfile() {
   try {
-    await chrome.storage.local.set({ [PROFILE_KEY]: readProfileFromForm() });
+    const profile = readProfileFromForm();
+    await chrome.storage.local.set({ [PROFILE_KEY]: profile });
+    if (syncEnabled) await writeSyncedProfile(profile);
   } catch {
     pageNotice.textContent = "Could not save profile. Check available browser storage.";
+    pageNotice.dataset.state = "error";
+  }
+}
+
+function syncAvailable() {
+  return Boolean(chrome.storage.sync);
+}
+
+async function writeSyncedProfile(profile) {
+  try {
+    await chrome.storage.sync.set({ [PROFILE_KEY]: profile });
+  } catch {
+    pageNotice.textContent = "Saved on this computer, but Chrome could not sync it to your Google account.";
+    pageNotice.dataset.state = "error";
+  }
+}
+
+async function setSyncEnabled(enabled) {
+  syncEnabled = enabled;
+  syncToggle.checked = enabled;
+  try {
+    await chrome.storage.local.set({ [SYNC_PREF_KEY]: enabled });
+    if (enabled) {
+      await chrome.storage.sync.set({ [PROFILE_KEY]: readProfileFromForm() });
+      pageNotice.textContent = "Sync is on. Another computer using the same Google account will now get these details. Documents still move only with a backup file.";
+      pageNotice.dataset.state = "success";
+    } else {
+      await chrome.storage.sync.remove(PROFILE_KEY);
+      pageNotice.textContent = "Sync is off and the copy in your Google account was deleted. Your details stay on this computer only.";
+      pageNotice.dataset.state = "success";
+    }
+  } catch {
+    syncEnabled = !enabled;
+    syncToggle.checked = !enabled;
+    pageNotice.textContent = "Chrome could not change the sync setting. Check that you are signed in to Chrome with sync turned on.";
     pageNotice.dataset.state = "error";
   }
 }
@@ -440,8 +472,20 @@ async function saveDocument(key, input) {
 
 async function loadSavedData() {
   try {
-    const result = await chrome.storage.local.get(PROFILE_KEY);
-    applyProfileToInputs(result[PROFILE_KEY] || {});
+    const stored = await chrome.storage.local.get([PROFILE_KEY, SYNC_PREF_KEY]);
+    syncEnabled = syncAvailable() && stored[SYNC_PREF_KEY] === true;
+    syncToggle.checked = syncEnabled;
+    let profile = stored[PROFILE_KEY] || {};
+    if (syncEnabled) {
+      const synced = (await chrome.storage.sync.get(PROFILE_KEY))[PROFILE_KEY];
+      if (synced && typeof synced === "object") {
+        profile = synced;
+        await chrome.storage.local.set({ [PROFILE_KEY]: synced });
+      } else {
+        await chrome.storage.sync.set({ [PROFILE_KEY]: profile });
+      }
+    }
+    applyProfileToInputs(profile);
     await refreshSavedFileStates();
   } catch {
     profileLoadError = true;
@@ -572,7 +616,9 @@ async function fillOpenForm() {
     const results = [...reply.results];
 
     await Promise.all(fileSaveTasks.values());
-    const attachedFiles = [];
+    await waitForFormSettled(tab.id);
+
+    const uploadQueue = [];
     for (const [key, input] of inputs) {
       if (input.type !== "file") continue;
       const saved = await documentTransaction("readonly", (store) => store.get(key));
@@ -582,57 +628,20 @@ async function fillOpenForm() {
         }
         continue;
       }
-      try {
-        if (!isAllowedForIismField(key, saved)) {
-          throw new Error(formatRequirementForField(key));
-        }
-        const dataUrl = await blobToDataUrl(saved.blob);
-        const [injection] = await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          world: "MAIN",
-          func: IISMPageFileAttachment.attachFileToForm,
-          args: [key, dataUrl, saved.name, saved.type, MAX_FILE_BYTES]
-        });
-        if (injection?.error) {
-          throw new Error(injection.error.message || "The browser could not run the page upload script.");
-        }
-        const fileReply = injection?.result;
-        if (!fileReply) throw new Error("The page upload script returned no result; no success is being reported.");
-        if (!fileReply.ok) throw new Error(fileReply.error || "The IISM page rejected the file.");
-        attachedFiles.push({
-          inputId: FILE_INPUT_IDS[key],
-          key,
-          label: FILE_FIELD_LABELS[key],
-          name: fileReply.name,
-          size: fileReply.size
-        });
-      } catch (error) {
-        results.push(`Could not attach ${FILE_FIELD_LABELS[key]} (${saved.name}): ${error.message}`);
+      if (!isAllowedForIismField(key, saved)) {
+        results.push(`Could not attach ${FILE_FIELD_LABELS[key]} (${saved.name}): ${formatRequirementForField(key)}`);
+        continue;
       }
+      uploadQueue.push({
+        key,
+        dataUrl: await blobToDataUrl(saved.blob),
+        fileName: saved.name,
+        fileType: saved.type,
+        maxFileBytes: MAX_FILE_BYTES
+      });
     }
 
-    if (attachedFiles.length) {
-      try {
-        const expectedFiles = attachedFiles.map(({ inputId, name, size }) => ({ inputId, name, size }));
-        const [verification] = await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          world: "MAIN",
-          func: IISMPageFileAttachment.verifyFilesOnForm,
-          args: [expectedFiles]
-        });
-        if (!verification?.result) throw new Error("The IISM form did not return upload verification.");
-        const missing = new Set(verification.result.missing.map((file) => file.inputId));
-        for (const file of attachedFiles) {
-          results.push(missing.has(file.inputId)
-            ? `Could not verify ${file.label} (${file.name}): the IISM form no longer has it selected. Choose it manually and check that it stays selected.`
-            : `Selected ${file.label} in the IISM form: ${file.name}.`);
-        }
-      } catch (error) {
-        for (const file of attachedFiles) {
-          results.push(`Could not verify ${file.label} (${file.name}) on the IISM form: ${error.message}`);
-        }
-      }
-    }
+    await attachFilesInBatch(tab.id, uploadQueue, results);
     results.push("Green confirms fields were filled or files are selected in the browser. Only IISM can confirm receipt after you submit.");
     showResults(results);
   } catch (error) {
@@ -652,12 +661,102 @@ function blobToDataUrl(blob) {
   });
 }
 
+// Wait until the IISM page has finished any postback the field changes kicked off.
+// The page stays idle (document ready and no ASP.NET postback) for a short, steady
+// window before we consider it settled, so we never race a re-render.
+async function waitForFormSettled(tabId, { timeoutMs = 15000, intervalMs = 150, stableMs = 600 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  let idleSince = 0;
+  for (;;) {
+    let busy = false;
+    try {
+      const [probe] = await chrome.scripting.executeScript({
+        target: { tabId },
+        world: "MAIN",
+        func: IISMPageFileAttachment.isFormBusy
+      });
+      busy = Boolean(probe?.result);
+    } catch {
+      // The page may be mid-navigation; treat that as busy and keep waiting.
+      busy = true;
+    }
+
+    const now = Date.now();
+    if (busy) {
+      idleSince = 0;
+    } else if (!idleSince) {
+      idleSince = now;
+    } else if (now - idleSince >= stableMs) {
+      return;
+    }
+    if (now >= deadline) return;
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+}
+
+// Set every queued file in a single injection, then read the form back and report
+// what actually survived on the page instead of assuming the attach worked.
+async function attachFilesInBatch(tabId, uploadQueue, results) {
+  if (!uploadQueue.length) return;
+
+  let attachments = [];
+  try {
+    const [response] = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: IISMPageFileAttachment.attachFilesToForm,
+      args: [uploadQueue]
+    });
+    attachments = Array.isArray(response?.result) ? response.result : [];
+  } catch (error) {
+    results.push(`Could not attach files: ${(error && error.message) || "the page did not accept them"}.`);
+    return;
+  }
+
+  for (const item of attachments) {
+    if (item && item.ok === false) {
+      results.push(`Could not attach ${FILE_FIELD_LABELS[item.key] || item.key}: ${item.error}`);
+    }
+  }
+
+  const accepted = attachments.filter((item) => item && item.ok);
+  if (!accepted.length) return;
+
+  await waitForFormSettled(tabId);
+  await new Promise((resolve) => setTimeout(resolve, 400));
+
+  let verification = null;
+  try {
+    const [response] = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: IISMPageFileAttachment.verifyFilesOnForm,
+      args: [accepted.map(({ inputId, name, size }) => ({ inputId, name, size }))]
+    });
+    if (response?.result) verification = response.result;
+  } catch {
+    // Leave verification null and report the uncertainty honestly below.
+  }
+
+  const missing = new Set((verification?.missing || []).map((item) => item.inputId));
+  for (const item of accepted) {
+    const label = FILE_FIELD_LABELS[item.key] || item.key;
+    if (verification && !missing.has(item.inputId)) {
+      results.push(`Selected ${label}: ${item.name}.`);
+    } else {
+      results.push(`Could not verify ${label}: the form cleared it. Choose the file manually.`);
+    }
+  }
+}
+
 async function removeAllSavedData() {
-  if (!window.confirm("Clear all saved profile details and documents from this browser?")) return;
+  const syncNote = syncEnabled ? " This also deletes the copy kept in your Google account." : "";
+  if (!window.confirm(`Clear all saved profile details and documents from this browser?${syncNote}`)) return;
   try {
     clearTimeout(saveTimer);
     await Promise.all(fileSaveTasks.values());
     await chrome.storage.local.remove(PROFILE_KEY);
+    if (syncEnabled) await chrome.storage.sync.remove(PROFILE_KEY);
     await documentTransaction("readwrite", (store) => store.clear());
     for (const [key, input] of inputs) {
       input.value = "";
@@ -693,40 +792,66 @@ async function removeDocument(key, input) {
   }
 }
 
+async function buildBackup() {
+  clearTimeout(saveTimer);
+  await Promise.all(fileSaveTasks.values());
+  const documents = {};
+  for (const [key, input] of inputs) {
+    if (input.type !== "file") continue;
+    const saved = await documentTransaction("readonly", (store) => store.get(key));
+    if (!saved) continue;
+    documents[key] = {
+      name: saved.name,
+      type: saved.type,
+      data: await blobToDataUrl(saved.blob)
+    };
+  }
+  const backup = {
+    app: BACKUP_APP_ID,
+    version: BACKUP_VERSION,
+    exportedAt: new Date().toISOString(),
+    profile: readProfileFromForm(),
+    documents
+  };
+  return {
+    count: Object.keys(documents).length,
+    filename: `iism-autofil-backup-${new Date().toISOString().slice(0, 10)}.json`,
+    blob: new Blob([JSON.stringify(backup)], { type: "application/json" })
+  };
+}
+
 async function exportBackup() {
   if (!window.confirm("Download a backup file? It contains your personal details and documents. Keep it private.")) return;
   try {
-    clearTimeout(saveTimer);
-    await Promise.all(fileSaveTasks.values());
-    const documents = {};
-    for (const [key, input] of inputs) {
-      if (input.type !== "file") continue;
-      const saved = await documentTransaction("readonly", (store) => store.get(key));
-      if (!saved) continue;
-      documents[key] = {
-        name: saved.name,
-        type: saved.type,
-        data: await blobToDataUrl(saved.blob)
-      };
-    }
-    const backup = {
-      app: BACKUP_APP_ID,
-      version: BACKUP_VERSION,
-      exportedAt: new Date().toISOString(),
-      profile: readProfileFromForm(),
-      documents
-    };
-    const url = URL.createObjectURL(new Blob([JSON.stringify(backup)], { type: "application/json" }));
+    const { blob, filename, count } = await buildBackup();
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `iism-autofil-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    link.download = filename;
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    const count = Object.keys(documents).length;
-    pageNotice.textContent = `Backup downloaded with ${count} document${count === 1 ? "" : "s"}. Keep this file private and load it on any other computer.`;
+    pageNotice.textContent = `Backup downloaded with ${count} document${count === 1 ? "" : "s"}. Attach this file in your email to send it to yourself, then load it on any other computer.`;
     pageNotice.dataset.state = "success";
   } catch {
     pageNotice.textContent = "Could not create a backup file. Please try again.";
+    pageNotice.dataset.state = "error";
+  }
+}
+
+async function shareBackup() {
+  try {
+    const { blob, filename, count } = await buildBackup();
+    const file = new File([blob], filename, { type: "application/json" });
+    await navigator.share({
+      files: [file],
+      title: "IISM Autofil backup",
+      text: "IISM Autofil backup. Open it on another computer with the Load backup file button."
+    });
+    pageNotice.textContent = `Shared ${count} document${count === 1 ? "" : "s"}. If you sent it to your email, open that email on the other computer, download the file, then click Load backup file.`;
+    pageNotice.dataset.state = "success";
+  } catch (error) {
+    if (error.name === "AbortError") return;
+    pageNotice.textContent = "The sharing window could not send the file. Use Save backup file instead, then attach the file in your email.";
     pageNotice.dataset.state = "error";
   }
 }
@@ -739,6 +864,7 @@ async function importBackup(file) {
     }
 
     await chrome.storage.local.set({ [PROFILE_KEY]: backup.profile });
+    if (syncEnabled) await writeSyncedProfile(backup.profile);
     applyProfileToInputs(backup.profile);
 
     let restored = 0;
@@ -797,12 +923,31 @@ async function updatePageNotice() {
   }
 }
 
+function updateOptionalControls() {
+  if (!syncAvailable()) {
+    syncToggle.disabled = true;
+    syncOption.dataset.unavailable = "true";
+    syncOption.title = "Chrome sync is not available in this browser profile.";
+  }
+  let shareSupported = false;
+  try {
+    const probe = new File(["{}"], "backup.json", { type: "application/json" });
+    shareSupported = typeof navigator.canShare === "function" && navigator.canShare({ files: [probe] });
+  } catch {
+    shareSupported = false;
+  }
+  shareButton.hidden = !shareSupported;
+}
+
 renderFields();
+updateOptionalControls();
 loadSavedData();
 updatePageNotice();
 fillButton.addEventListener("click", fillOpenForm);
 clearButton.addEventListener("click", removeAllSavedData);
 exportButton.addEventListener("click", exportBackup);
+shareButton.addEventListener("click", shareBackup);
+syncToggle.addEventListener("change", () => setSyncEnabled(syncToggle.checked));
 importButton.addEventListener("click", () => importFileInput.click());
 importFileInput.addEventListener("change", async () => {
   const file = importFileInput.files?.[0];

@@ -136,10 +136,43 @@ main {
 }
 
 .toolbar {
-  display: grid;
-  grid-template-columns: 1fr auto;
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 10px;
+}
+
+.toolbar .button-primary {
+  flex: 1 1 100%;
+}
+
+.toolbar .button-quiet {
+  flex: 1 1 auto;
+}
+
+.sync-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 10px;
+  border: 1px solid #e1e5ee;
+  border-radius: 8px;
+  background: #fff;
+  color: #35415a;
+  font-size: 11px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.sync-option input {
+  flex: 0 0 auto;
+  margin: 2px 0 0;
+}
+
+.sync-option[data-unavailable="true"] {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .button {

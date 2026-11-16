@@ -87,8 +87,8 @@ function makeHarness(options = {}) {
     setTimeout
   };
   const api = {
-    attachFileToForm: vm.runInNewContext(
-      `(${sandbox.IISMPageFileAttachment.attachFileToForm.toString()})`,
+    attachFilesToForm: vm.runInNewContext(
+      `(${sandbox.IISMPageFileAttachment.attachFilesToForm.toString()})`,
       injectionSandbox
     ),
     verifyFilesOnForm: vm.runInNewContext(
@@ -99,16 +99,16 @@ function makeHarness(options = {}) {
   return { inputs, api };
 }
 
-test("attaches a PDF to an unrestricted proof field and verifies the selected input", async () => {
+test("attaches a PDF to an unrestricted proof field and verifies the selected input", () => {
   const { inputs, api } = makeHarness();
   const dataUrl = `data:application/pdf;base64,${Buffer.from("%PDF-1.4 test").toString("base64")}`;
-  const result = await api.attachFileToForm(
-    "domicileProof",
+  const [result] = api.attachFilesToForm([{
+    key: "domicileProof",
     dataUrl,
-    "applicant.pdf",
-    "application/pdf",
-    500 * 1024
-  );
+    fileName: "applicant.pdf",
+    fileType: "application/pdf",
+    maxFileBytes: 500 * 1024
+  }]);
 
   assert.equal(result.ok, true);
   const input = inputs.get("FupDomicileAttachProof");
@@ -121,16 +121,16 @@ test("attaches a PDF to an unrestricted proof field and verifies the selected in
   }]).ok, true);
 });
 
-test("attaches date-of-birth proof to the correct IISM upload field", async () => {
+test("attaches date-of-birth proof to the correct IISM upload field", () => {
   const { inputs, api } = makeHarness();
   const dataUrl = `data:image/jpeg;base64,${Buffer.from("birth proof").toString("base64")}`;
-  const result = await api.attachFileToForm(
-    "birthCertificate",
+  const [result] = api.attachFilesToForm([{
+    key: "birthCertificate",
     dataUrl,
-    "birth-certificate.jpg",
-    "image/jpeg",
-    500 * 1024
-  );
+    fileName: "birth-certificate.jpg",
+    fileType: "image/jpeg",
+    maxFileBytes: 500 * 1024
+  }]);
 
   assert.equal(result.ok, true);
   assert.equal(inputs.get("FupBirthCertificate").files[0].name, "birth-certificate.jpg");
@@ -149,47 +149,71 @@ test("rejects PDF for every IISM image-only upload field", () => {
 
   for (const key of imageOnlyKeys) {
     const { api } = makeHarness();
-    const result = api.attachFileToForm(
+    const [result] = api.attachFilesToForm([{
       key,
       dataUrl,
-      `${key}.pdf`,
-      "application/pdf",
-      500 * 1024
-    );
+      fileName: `${key}.pdf`,
+      fileType: "application/pdf",
+      maxFileBytes: 500 * 1024
+    }]);
 
     assert.equal(result.ok, false, `${key} should reject PDF`);
     assert.match(result.error, /requires a JPG\/JPEG\/PNG image/);
   }
 });
 
-test("attaches current-employment proof to its mapped IISM upload field", async () => {
+test("attaches current-employment proof to its mapped IISM upload field", () => {
   const { inputs, api } = makeHarness();
   const dataUrl = `data:application/pdf;base64,${Buffer.from("employment proof").toString("base64")}`;
-  const result = await api.attachFileToForm(
-    "currentEmployment",
+  const [result] = api.attachFilesToForm([{
+    key: "currentEmployment",
     dataUrl,
-    "employment-proof.pdf",
-    "application/pdf",
-    500 * 1024
-  );
+    fileName: "employment-proof.pdf",
+    fileType: "application/pdf",
+    maxFileBytes: 500 * 1024
+  }]);
 
   assert.equal(result.ok, true);
   assert.equal(inputs.get("FupCurrentEmployment").files[0].name, "employment-proof.pdf");
 });
 
-test("reports failure when the page clears the file during its change handler", async () => {
-  const { api } = makeHarness({ clearOnChange: true });
-  const dataUrl = `data:image/jpeg;base64,${Buffer.from("photo").toString("base64")}`;
-  const result = await api.attachFileToForm(
-    "applicantPhoto",
-    dataUrl,
-    "photo.jpg",
-    "image/jpeg",
-    500 * 1024
-  );
+test("attaches every queued file in a single batch call", () => {
+  const { inputs, api } = makeHarness();
+  const jpg = `data:image/jpeg;base64,${Buffer.from("image").toString("base64")}`;
+  const pdf = `data:application/pdf;base64,${Buffer.from("proof").toString("base64")}`;
+  const results = api.attachFilesToForm([
+    { key: "birthCertificate", dataUrl: jpg, fileName: "birth.jpg", fileType: "image/jpeg", maxFileBytes: 500 * 1024 },
+    { key: "applicantPhoto", dataUrl: jpg, fileName: "photo.jpg", fileType: "image/jpeg", maxFileBytes: 500 * 1024 },
+    { key: "currentEmployment", dataUrl: pdf, fileName: "employment.pdf", fileType: "application/pdf", maxFileBytes: 500 * 1024 }
+  ]);
 
-  assert.equal(result.ok, false);
-  assert.match(result.error, /cleared this file/);
+  assert.equal(results.length, 3);
+  assert.ok(results.every((result) => result.ok));
+  assert.equal(inputs.get("FupBirthCertificate").files[0].name, "birth.jpg");
+  assert.equal(inputs.get("FupPhototOfApplicant").files[0].name, "photo.jpg");
+  assert.equal(inputs.get("FupCurrentEmployment").files[0].name, "employment.pdf");
+});
+
+test("reports failure when the page clears the file during its change handler", () => {
+  const { inputs, api } = makeHarness({ clearOnChange: true });
+  const dataUrl = `data:image/jpeg;base64,${Buffer.from("photo").toString("base64")}`;
+  const [result] = api.attachFilesToForm([{
+    key: "applicantPhoto",
+    dataUrl,
+    fileName: "photo.jpg",
+    fileType: "image/jpeg",
+    maxFileBytes: 500 * 1024
+  }]);
+
+  assert.equal(result.ok, true);
+  assert.equal(inputs.get("FupPhototOfApplicant").files.length, 0);
+  const verified = api.verifyFilesOnForm([{
+    inputId: "FupPhototOfApplicant",
+    name: "photo.jpg",
+    size: 5
+  }]);
+  assert.equal(verified.ok, false);
+  assert.equal(verified.missing[0].inputId, "FupPhototOfApplicant");
 });
 
 test("reports missing files after all form change handlers have run", () => {
